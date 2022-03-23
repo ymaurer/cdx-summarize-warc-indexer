@@ -25,4 +25,4 @@ The same rationale to mime-type simplification as in [cdx-summarize](https://git
 Currently the scripts place a limit of 10 million second-level domains on the query. This may or may not be enough depending on the size of the web archive.
 
 ## Domains
-The "domain" field in the warc-indexer, as used in the SOLRWayback, holds the second-level domain name. This may not be appropriate for TLDs like ".uk" in which the subdomains of e.g. ".ac.uk" and ".co.uk" are held by different organisations and so should be separated out. I do not know whether other webarchives hold the same info in the "domain" field.
+The "domain" field in the warc-indexer, as used in the SOLRWayback, holds the private domain name as determined by having one more hierarchical level than the public suffix, as determined by Mozilla's [publicsuffix.org](https://publicsuffix.org/) list. This means that the subdomains of e.g. ".ac.uk" and ".co.uk" are separated into different "domain" values. This is currently not the same as for cdx-summarize which only takes the second-level domain.
