@@ -47,6 +47,18 @@ fi
 : ${QFILES:="$@"}
 : ${QFILES:=$(find . -maxdepth 1 -iname '*.q')}
 
+# If defined, the filter will be merged with the query extracted from QFILE:
+# myfilter AND (qfile_query)
+# This can be used for bisection in case of timeouts. Consider filters such as
+# hash:[* TO sha1:K}
+# hash:[sha1:K TO *]
+# for bisection. Note the curly bracket:
+# https://solr.apache.org/guide/6_6/the-standard-query-parser.html#TheStandardQueryParser-RangeSearches
+# The hash generates by webarchive-discovery is Base32 encoded with the characters
+# ABCDEFGHIJKLMNOPQRSTUVWXYZ234567
+# Note that 2-7 is lexically before A-Z.
+: ${FILTER:=""}
+
 : ${PROTOCOL:="http"}
 : ${SERVER:="localhost"}
 : ${PORT:="8983"}
@@ -93,6 +105,11 @@ check_parameters() {
 query_job() {
     # Escape embedded quotes
     local QUERY="$(sed 's/"/\\"/g' <<< "$1")"
+    # Merge with FILTER if relevant
+    if [[ ! -z "$FILTER" ]]; then
+        QUERY="${FILTER} AND (${QUERY})"
+    fi
+
     local OUTPUT="$2"
     local OUTPUT_INTERMEDIATE="${OUTPUT}.raw"
     local STREAM="expr=\
@@ -114,9 +131,13 @@ query_job() {
         >&2 echo "Error: No output generated from calling ${CURL} \"$STREAM_URL\" -d \"$STREAM\""
         return
     fi
+    if [[ "." != ".$(grep "java.net.SocketTimeoutException" "$OUTPUT_INTERMEDIATE")" ]]; then
+        >&2 echo "Error: 'java.net.SocketTimeoutException' found in ${OUTPUT_INTERMEDIATE}, signalling premature EOS. Increase the Solr Cloud timeout (good luck extending beyond 10 minutes with Solr 7) or bisect the query in some way"
+        return
+    fi
     jq -r "${JQEXP}" < "$OUTPUT_INTERMEDIATE" | grep -v ,,, > "$OUTPUT"
     if [[ ! -s "$OUTPUT" ]]; then
-        >&2 echo "Error: No output generated from transforming $OUTPUT_INTERMEDIATE"
+        >&2 echo "Error: No output generated from transforming ${OUTPUT_INTERMEDIATE}"
     fi
     # TODO: Add proper check for fully successful transformation (not just partial) and if so, delete the intermediate output
 }
@@ -125,8 +146,8 @@ query_job() {
 # Input: query_file
 file_job() {
     local INPUT="$1"
-    # ./solrq_json.q -> json
-    local DESIGNATION="$(sed 's/.*solrq_\([a-z0-9]\+\).q/\1/' <<< "$INPUT")"
+    # ./solrq_json.q -> q_json
+    local DESIGNATION="$(sed 's/.*solr\(q_[a-z0-9]\+\).q/\1/' <<< "$INPUT")"
     local OUTPUT="${OUTPUT_PREFIX}${DESIGNATION}-result.csv"
 
     if [[ "$DESIGNATION" == "$INPUT" ]]; then
@@ -149,7 +170,8 @@ file_job() {
         fi
     fi
     
-    local QUERY="$(jq -r .query < "$INPUT")"
+    # '+' signals a space and must be URL-encoded to %2B. TODO: Why does this not happen automatically with curl -d?
+    local QUERY="$(jq -r .query < "$INPUT" | sed 's/+/%2B/g')"
     if [[ -z "$QUERY" ]]; then
         >&2 echo "Error: Unable to extract query from file '$INPUT'"
         return
