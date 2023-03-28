@@ -7,16 +7,24 @@ if [ "$1" == "--help" ]; then
 	exit
 fi
 
-SERVER="localhost"
-PORT="8983"
-INDEX="netarchivebuilder"
-URL="http://${SERVER}:${PORT}/solr/${INDEX}/select"
-JQFILTER=".facets.domains.buckets[] | {\"domain\":.val,\"years\":.years[][]}"
-JQCSV="[.domain, .years.val,.years.count,.years.sizes] | @csv"
-CURL="curl -s"
+pushd ${BASH_SOURCE%/*} > /dev/null
+if [[ -s "solr.conf" ]]; then
+    source "solr.conf" # Optional config
+fi
+popd > /dev/null
+: ${SERVER:="localhost"}
+: ${PORT:="8983"}
+: ${INDEX:="netarchivebuilder"}
+
+: ${URL:="http://${SERVER}:${PORT}/solr/${INDEX}/query"}
+
+: ${JQFILTER:=".facets.domains.buckets[] | {\"domain\":.val,\"years\":.years[][]}"}
+: ${JQCSV:="[.domain, .years.val,.years.count,.years.sizes] | @csv"}
+: ${CURL:="curl -s"}
 
 if [ $# -gt 0 ]; then
-	${CURL} "${URL}" -d @${1} | jq "${JQFILTER}"  | jq -r "${JQCSV}"
+        echo "${CURL} \"${URL}\" -d @${1} | jq \"${JQFILTER}\"  | jq -r \"${JQCSV}\""
+#	${CURL} "${URL}" -d @${1} | jq "${JQFILTER}"  | jq -r "${JQCSV}"
 	exit
 fi
 
